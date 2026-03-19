@@ -32,7 +32,7 @@ typedef struct {
 } Config;
 
 typedef struct {
-    int8_t* q;    // quantized values
+    int16_t* q;    // quantized values
     float* s; // scaling factors
 } QuantizedTensor;
 
@@ -96,8 +96,8 @@ void malloc_run_state(RunState* s, Config* p) {
     s->xb2 = calloc(p->dim, sizeof(float));
     s->hb = calloc(p->hidden_dim, sizeof(float));
     s->hb2 = calloc(p->hidden_dim, sizeof(float));
-    s->xq = (QuantizedTensor) { .q = calloc(p->dim, sizeof(int8_t)), .s = calloc(p->dim, sizeof(float)) };
-    s->hq = (QuantizedTensor) { .q = calloc(p->hidden_dim, sizeof(int8_t)), .s = calloc(p->hidden_dim, sizeof(float)) };
+    s->xq = (QuantizedTensor) { .q = calloc(p->dim, sizeof(int16_t)), .s = calloc(p->dim, sizeof(float)) };
+    s->hq = (QuantizedTensor) { .q = calloc(p->hidden_dim, sizeof(int16_t)), .s = calloc(p->hidden_dim, sizeof(float)) };
     s->q = calloc(p->dim, sizeof(float));
     s->k = calloc(kv_dim, sizeof(float));
     s->v = calloc(kv_dim, sizeof(float));
@@ -144,7 +144,7 @@ void dequantize(QuantizedTensor *qx, float* x, int n) {
 
 void quantize(QuantizedTensor *qx, float* x, int n) {
     int num_groups = n / GS;
-    float Q_MAX = 127.0f;
+    float Q_MAX = 32767.0f;
 
     for (int group = 0; group < num_groups; group++) {
 
@@ -164,7 +164,7 @@ void quantize(QuantizedTensor *qx, float* x, int n) {
         // calculate and write the quantized values
         for (int i = 0; i < GS; i++) {
             float quant_value = x[group * GS + i] / scale; // scale
-            int8_t quantized = (int8_t) round(quant_value); // round and clamp
+            int16_t quantized = (int16_t) round(quant_value); // round and clamp
             qx->q[group * GS + i] = quantized;
         }
     }
@@ -175,9 +175,9 @@ QuantizedTensor *init_quantized_tensors(void **ptr, int n, int size_each) {
     void *p = *ptr;
     QuantizedTensor *res = malloc(n * sizeof(QuantizedTensor));
     for(int i=0; i<n; i++) {
-        /* map quantized int8 values*/
-        res[i].q = (int8_t*)p;
-        p = (int8_t*)p + size_each;
+        /* map quantized int16 values*/
+        res[i].q = (int16_t*)p;
+        p = (int16_t*)p + size_each;
         /* map scale factors */
         res[i].s = (float*)p;
         p = (float*)p + size_each / GS;
@@ -323,14 +323,14 @@ void matmul(float* xout, QuantizedTensor *x, QuantizedTensor *w, int n, int d) {
     #pragma omp parallel for private(i)
     for (i = 0; i < d; i++) {
         float val = 0.0f;
-        int32_t ival = 0;
+        int64_t ival = 0;
         int in = i * n;
 
         // do the matmul in groups of GS
         int j;
         for (j = 0; j <= n - GS; j += GS) {
             for (int k = 0; k < GS; k++) {
-                ival += ((int32_t) x->q[j + k]) * ((int32_t) w->q[in + j + k]);
+                ival += ((int64_t) x->q[j + k]) * ((int64_t) w->q[in + j + k]);
             }
             val += ((float) ival) * w->s[(in + j) / GS] * x->s[j / GS];
             ival = 0;

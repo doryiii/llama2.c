@@ -115,10 +115,8 @@ def train_vocab(vocab_size):
                                    normalization_rule_name="identity")
 
     # 3) optional cleanup, ask the user if they'd like to delete tiny.txt
-    dec = input(f"Delete the temporary file {tiny_file}? [y/N] ")
-    if dec.lower() == "y":
-        os.remove(tiny_file)
-        print(f"Deleted {tiny_file}")
+    os.remove(tiny_file)
+    print(f"Deleted {tiny_file}")
 
     print(f"Trained tokenizer is in {prefix}.model")
     print("Done.")
